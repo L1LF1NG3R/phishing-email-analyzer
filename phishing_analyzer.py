@@ -6,6 +6,8 @@ from email.utils import parseaddr
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 
+# patterns for detecting phishing indicators.
+
 generic_greetings = [
     r"dear (customer|user|client|member|sir|madam|sir/madam|account holder| valued \w+)",
     r"dear (email|paypal|amazon|bank) (user|customer|member)",
@@ -58,3 +60,39 @@ common_misspellings = [
     "dear costumer", "informations", "loging", "immediatly", "confirmation of you",
     "updat your", "clik here", "suspened", "verificaton",
 ]
+
+
+# handles country code domains.
+# (ex. www.example.co.uk -> example.co.uk) or (google.com -> google.com)
+def registered_domain(host: str) -> str:
+    host = host.lower().strip(".")
+    parts = host.split(".")
+    if len(parts) <= 2:
+        return host
+    if parts[-2] in {"co", "com", "net", "org", "gov", "edu", "ac"} and len(parts[-1]) == 2:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+def domain_of (address: str) -> str:
+    return address.split("@")[-1].lower().strip() if "@" in address else ""
+
+class LinkExtractor(HTMLParser):
+    def __init__(self):
+        super().__init_()
+        self.links = []
+        self._current_href = None
+        self._current_text = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self._current_href = dict(attrs).get("href")
+            self._current_text = []
+
+    def handle_data(self, data):
+        if self._current_href is not None:
+            self._current_text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._current_href is not None:
+            self.links.append((self._current_href, "".join(self._current_text).strip()))
+            self._current_href = None
