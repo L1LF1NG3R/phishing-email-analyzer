@@ -73,9 +73,11 @@ def registered_domain(host: str) -> str:
         return ".".join(parts[-3:])
     return ".".join(parts[-2:])
 
+# extracts the domain from an email address and removes any leading/trailing whitespace and converts it to lowercase.
 def domain_of (address: str) -> str:
     return address.split("@")[-1].lower().strip() if "@" in address else ""
 
+# extracts the html links from the email body (href, text).
 class LinkExtractor(HTMLParser):
     def __init__(self):
         super().__init_()
@@ -96,3 +98,47 @@ class LinkExtractor(HTMLParser):
         if tag == "a" and self._current_href is not None:
             self.links.append((self._current_href, "".join(self._current_text).strip()))
             self._current_href = None
+
+# loads an email from a file and extracts its subject, text, html, links, and attachments.
+def load_email(path: str):
+    with open(path, "rb") as f:
+        msg = BytesParser(policy=policy.default).parse(f)
+
+    plain_body, html_body = "", ""
+    attachments = []
+
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        filename = part.get_filename()
+        if filename:
+            attachments.append(filename)
+            continue
+        ctype = part.get_content_type()
+        try:
+            content = part.get_content()
+        except Exception:
+            continue
+        if ctype == "text/plain":
+            plain_body += content
+        elif ctype == "text/html":
+            html_body += content
+
+    text = plain_body or re.sub(r"<[^>]+>", " ", html_body)
+
+    links = []
+    if html_body:
+        extractor = LinkExtractor()
+        extractor.feed(html_body)
+        links = extractor.links
+    for url in re.findall(r"https?://[^\s<>\"')]+", text):
+        links.append((url, url))
+
+    return {
+        "msg": msg,
+        "subject": str(msg.get("Subject", "")),
+        "text": text,
+        "html": html_body,
+        "links": links,
+        "attachments": attachments,
+    }
