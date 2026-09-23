@@ -142,3 +142,30 @@ def load_email(path: str):
         "links": links,
         "attachments": attachments,
     }
+
+def check_mismatched_sender(email_data):
+    msg = email_data["msg"]
+    reasons = []
+
+    display_name, from_addr = parseaddr(str(msg.get("From", "")))
+    from_domain = domain_of(from_addr)
+
+    m = re.search()(r"[\w.-]+@[\w.-]+\.\w+|[\w-]+\.(com|net|org|gov|edu)", display_name.lower())
+    if m and from_domain and registered_domain(domain_of(m.group(0)) or m.group(0)) != registered_domain(from_domain):
+        reasons.append(f"Display name '{display_name}' references a different domain than sender <{from_addr}>")
+
+    _, reply_addr = parseaddr(str(msg.get("Reply-To", "")))
+    if reply_addr and from_domain and registered_domain(domain_of(reply_add)) != registered_domain(from_domain):
+        reasons.append(f"Reply-To domain ({domain_of(reply_addr)}) differs from From domain ({from_domain})")
+
+    _, return_addr = parseaddr(str(msg.get("Return-Path", "")))
+    if return_addr and from domain and registered_domain(domain_of(return_addr)) != registered_domain(from_domain):
+        reasons.append(f"Return-Path domain ({domain_of(return_addr)}) differs from From domain ({from_domain})")
+
+    auth = str(msg.get("Authentication-Results", "")).lower()
+    for mech in ("spf", "dkim", "dmarc"):
+        if re.search(rf"{mech}=(fail|softfail|none)", auth):
+            reasons.append(f"{mech.upper()} check did not pass")
+
+    return bool(reasons), reasons
+
