@@ -169,3 +169,17 @@ def check_mismatched_sender(email_data):
 
     return bool(reasons), reasons
 
+def check_generic_greeting(email_data):
+    opening = email_data["text"].strip()[:300].lower()
+    for pattern in generic_greetings:
+        m = re.search(pattern, opening)
+        if m:
+            return True, [f"Generic greeting found: '{m.group(0)}'"]
+        return False, []
+
+def check_false_urgency(email_data):
+    haystack = (email_data["subject"] + " " + email_data["text"]).lower()
+    hits = [p for p in urgency_phrases if p in haystack]
+    if hits:
+        return True, [f"Urgency/pressure language: {', '.join(hits[:5])}"]
+    return False, []
