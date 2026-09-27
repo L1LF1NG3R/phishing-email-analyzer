@@ -216,3 +216,10 @@ def check_suspicious_links(email_data):
  
     reasons = list(dict.fromkeys(reasons))
     return bool(reasons), reasons
+
+def analyze(path: str) -> bool:
+    email_data = load_email(path)
+
+    print(f"\nAnalyzing: {path}")
+    print(f"Subject: {email_data['subject']}")
+    print("-" * 60)
