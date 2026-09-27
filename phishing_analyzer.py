@@ -183,3 +183,36 @@ def check_false_urgency(email_data):
     if hits:
         return True, [f"Urgency/pressure language: {', '.join(hits[:5])}"]
     return False, []
+
+def check_suspicious_links(email_data):
+    reasons = []
+    for href, text in email_data["links"]:
+        href = (href or "").strip()
+        if not href.lower().startswith("http://", "https://"):
+            continue
+        parsed = urlparse(href)
+        host = (parsed.hostname or "").lower()
+
+        if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
+            reasons.append(f"Link uses a raw IP address: {href}")
+        if host in url_shorteners:
+            reasons.append(f"Link uses a URL shortener: {href}")
+        if "xn--" in host:
+            reasons.append(f"Link uses punycode (possible lookalike domain): {host}")
+        if "@" in parsed.netloc:
+            reasons.append(f"Link contains '@' in the address (obfuscation trick): {href}")
+        if any(host.endswith(tld) for tld in suspicious_tlds):
+            reasons.append(f"Link uses a commonly abused TLD: {host}")
+        if host.count(".") >= 4:
+            reasons.append(f"Link has an unusually long subdomain chain: {host}")
+        if parsed.scheme == "http":
+            reasons.append(f"Link is not HTTPS: {href}")
+ 
+        shown = re.search(r"([\w-]+\.)+[a-z]{2,}", text.lower())
+        if shown and host:
+            shown_domain = registered_domain(shown.group(0))
+            if shown_domain != registered_domain(host):
+                reasons.append(f"Link text shows '{shown.group(0)}' but goes to '{host}'")
+ 
+    reasons = list(dict.fromkeys(reasons))
+    return bool(reasons), reasons
