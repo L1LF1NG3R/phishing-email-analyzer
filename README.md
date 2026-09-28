@@ -34,8 +34,11 @@ tested against real-world phishing samples from the EPVME Dataset (EPVME_1.zip),
 <b>Clean Email - No Indicators Triggered</b>
 &emsp; <img src="https://imgur.com/XltCnoq.png" height="80%" width="80%" alt="Result"/> <br/>
 
-<b>Suspicious Link Flagged in a Spam Sample</b>
-&emsp; <img src="https://imgur.com/Jv5ZoY3.png" height="80%" width="80%" alt="Result"/> <br/>
+<b>Suspicious Link & Poor Grammar Flagged</b>
+&emsp; <img src="https://imgur.com/f0yPdFB.png" height="80%" width="80%" alt="Result"/> <br/>
+
+<b>Poor Grammar & Requests for Data</b>
+&emsp; <img src="https://imgur.com/W4oAzwA.png" height="80%" width="80%" alt="Result"/> <br/>
 
 <h2>Limitations</h2>
 
