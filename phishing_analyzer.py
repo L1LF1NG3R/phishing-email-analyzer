@@ -80,7 +80,7 @@ def domain_of (address: str) -> str:
 # extracts the html links from the email body (href, text).
 class LinkExtractor(HTMLParser):
     def __init__(self):
-        super().__init_()
+        super().__init__()
         self.links = []
         self._current_href = None
         self._current_text = []
@@ -143,6 +143,7 @@ def load_email(path: str):
         "attachments": attachments,
     }
 
+# checks and compares the displayed sender email compared to the underlying domain of the sender.
 def check_mismatched_sender(email_data):
     msg = email_data["msg"]
     reasons = []
@@ -150,16 +151,16 @@ def check_mismatched_sender(email_data):
     display_name, from_addr = parseaddr(str(msg.get("From", "")))
     from_domain = domain_of(from_addr)
 
-    m = re.search()(r"[\w.-]+@[\w.-]+\.\w+|[\w-]+\.(com|net|org|gov|edu)", display_name.lower())
+    m = re.search(r"[\w.-]+@[\w.-]+\.\w+|[\w-]+\.(com|net|org|gov|edu)", display_name.lower())
     if m and from_domain and registered_domain(domain_of(m.group(0)) or m.group(0)) != registered_domain(from_domain):
         reasons.append(f"Display name '{display_name}' references a different domain than sender <{from_addr}>")
 
     _, reply_addr = parseaddr(str(msg.get("Reply-To", "")))
-    if reply_addr and from_domain and registered_domain(domain_of(reply_add)) != registered_domain(from_domain):
+    if reply_addr and from_domain and registered_domain(domain_of(reply_addr)) != registered_domain(from_domain):
         reasons.append(f"Reply-To domain ({domain_of(reply_addr)}) differs from From domain ({from_domain})")
 
     _, return_addr = parseaddr(str(msg.get("Return-Path", "")))
-    if return_addr and from domain and registered_domain(domain_of(return_addr)) != registered_domain(from_domain):
+    if return_addr and from_domain and registered_domain(domain_of(return_addr)) != registered_domain(from_domain):
         reasons.append(f"Return-Path domain ({domain_of(return_addr)}) differs from From domain ({from_domain})")
 
     auth = str(msg.get("Authentication-Results", "")).lower()
@@ -169,6 +170,7 @@ def check_mismatched_sender(email_data):
 
     return bool(reasons), reasons
 
+# compares the contents of the email with our list of generic greetings.
 def check_generic_greeting(email_data):
     opening = email_data["text"].strip()[:300].lower()
     for pattern in generic_greetings:
@@ -177,18 +179,21 @@ def check_generic_greeting(email_data):
             return True, [f"Generic greeting found: '{m.group(0)}'"]
         return False, []
 
+# compares the contents of the email with our list of false urgency messages.
+
 def check_false_urgency(email_data):
     haystack = (email_data["subject"] + " " + email_data["text"]).lower()
-    hits = [p for p in urgency_phrases if p in haystack]
+    hits = [p for p in generic_urgency_phrases if p in haystack]
     if hits:
         return True, [f"Urgency/pressure language: {', '.join(hits[:5])}"]
     return False, []
 
+# cleans up the link in an email and checks if it returns a raw ip address, a url shortener, punycode, TLD's, and long subdomains.
 def check_suspicious_links(email_data):
     reasons = []
     for href, text in email_data["links"]:
         href = (href or "").strip()
-        if not href.lower().startswith("http://", "https://"):
+        if not href.lower().startswith(("http://", "https://")):
             continue
         parsed = urlparse(href)
         host = (parsed.hostname or "").lower()
@@ -217,9 +222,97 @@ def check_suspicious_links(email_data):
     reasons = list(dict.fromkeys(reasons))
     return bool(reasons), reasons
 
+# compares the attachment in the email with pre-defined risky file extensions, and it also detects if a file has two extensions.
+def check_unexpected_attachments(email_data):
+    reasons = []
+    for name in email_data["attachments"]:
+        lower = name.lower()
+        ext = "." + lower.rsplit(".", 1)[-1] if "." in lower else ""
+        if ext in risky_attachment_extensions:
+            reasons.append(f"Risky attachment type: {name}")
+        if re.search(r"\.(pdf|docx?|xlsx?|jpg|png|txt)\.(exe|scr|js|bat|vbs|html?)$", lower):
+            reasons.append(f"Double file extension (disguised executable): {name}")
+    reasons = list(dict.fromkeys(reasons))
+    return bool(reasons), reasons
+
+# checks the email header and body for poor grammar.
+def check_poor_grammar(email_data):
+    text = email_data["text"]
+    lower = text.lower()
+    reasons = []
+
+    found = [w for w in common_misspellings if w in lower]
+    if found:
+        reasons.apend(f"Common phishing misspellings/phrases: {', '.join(found[:4])}")
+
+    if re.search(r"[!?]{2,}", text):
+        reasons.append("Repeated punctation (!! or ??)")
+
+    if len(re.findall(r"[a-z][.,!?][A-Za-z]", text)) >= 3:
+        reasons.append("Multiple missing spaces after punctuation")
+
+    words = re.findall(r"\b[A-Za-z]{3,}\b", text)
+    if words:
+        caps_ratio = sum(1 for w in words if w.isupper()) / len(words)
+        if caps_ratio > 0.25 and len(words) > 15:
+            reasons.append("Excessive ALL CAPS text")
+
+    sentences = [s.strip() for s in re.split(r"[.!?]\s+", text) if len(s.strip()) > 20]
+    lowercase_starts = sum(1 for s in sentences if s[0].islower())
+    if len(sentences) >= 4 and lowercase_starts / len(sentences) > 0.4:
+        reasons.append("Many sentences begin with a lowercase letter")
+
+    return bool(reasons), reasons
+
+def check_data_requests(email_data):
+    haystack = (email_data["subject"] + " " + email_data["text"]).lower()
+    reasons = []
+
+    for pattern in data_request_patterns:
+        m = re.search(pattern, haystack)
+        if m:
+            snippet = re.sub(r"\s+", " ", m.group(0)).strip()
+            reasons.append(f"Asks for sensitive data/action: '{snippet[:80]}'")
+
+    if re.search(r"<input[^>]+type=[\"']?password", email_data["html"].lower()):
+        reasons.append("Email contains an embedded password field")
+ 
+    reasons = list(dict.fromkeys(reasons))
+    return bool(reasons), reasons
+
+checks = [
+    ("Mismatched Sender Address", check_mismatched_sender),
+    ("Generic Greetings", check_generic_greeting),
+    ("False Urgency", check_false_urgency),
+    ("Suspicious Links", check_suspicious_links),
+    ("Unexpected Attachments", check_unexpected_attachments),
+    ("Poor Grammar", check_poor_grammar),
+    ("Requests for Data", check_data_requests),
+]
+
+# main function
 def analyze(path: str) -> bool:
     email_data = load_email(path)
 
     print(f"\nAnalyzing: {path}")
     print(f"Subject: {email_data['subject']}")
     print("-" * 60)
+
+    any_triggered = False
+    for name, check in checks:
+        triggered, reasons = check(email_data)
+        any_triggered = any_triggered or triggered
+        print(f"[{'X' if triggered else ' '}] {name}")
+        for r in reasons:
+            print(f"      - {r}")
+
+    print("-" * 60)
+    print(f"PHISHING INDCATORS FOUND: {'YES' if any_triggered else 'NO'}\n")
+    return any_triggered
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python phishing_analyzer.py path/to/email.eml")
+        sys.exit(2)
+    result = analyze(sys.argv[1])
+    sys.exit(1 if result else 0)
